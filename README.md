@@ -1,481 +1,190 @@
 # 5G Core Inspector
 
-**5G Core Inspector** is an experimental platform for observability, event correlation, and root-cause analysis in distributed 5G Core networks.
-
-It collects logs from multiple Open5GS Network Functions (NFs), streams them through Kafka, correlates events across NFs, and provides a higher-level view of UE procedures and incidents.
+5G Core Inspector correlates distributed Open5GS logs into UE procedures, signalling timelines and incident evidence. Its operator dashboard uses the real Kafka ingestion pipeline and refreshes automatically; it does not substitute demo fixtures.
 
 ## Architecture
 
 ```text
-OAI UE
-  |
-OCUDU gNB
-  |
-Split Open5GS 5G Core
-  |
-RCA Log Agent
-  |
-Kafka
-  |
-RCA Ingester
-  |
-Demo UI
+Open5GS Network Functions
+  → RCA Log Agent
+  → Kafka
+  → RCA Ingester / Correlation
+  → API
+  → Web UI
 ```
 
-## Repositories
+OCUDU gNB and OAI UE can generate real signalling through the split Open5GS core using the existing local ZMQ configuration.
 
-| Component | Repository |
-|---|---|
-| OCUDU | https://github.com/SystronLab/ocudu |
-| Open5GS | https://github.com/SystronLab/open5gs |
-| Kafka Setup | https://github.com/SystronLab/kafka-setup |
-| RCA Log Agent | https://github.com/SystronLab/rca-log-agent |
-| RCA Ingester | https://github.com/SystronLab/rca-ingester |
-| OpenAirInterface 5G | https://gitlab.eurecom.fr/oai/openairinterface5g.git |
+| Component | Location | Responsibility |
+|---|---|---|
+| Split Open5GS core | `ocudu/docker/open5gs-split/` | Core network deployment |
+| Kafka | `kafka-setup/` | NF event topics and Kafka UI |
+| RCA log agent | `rca-log-agent/` | Forward Docker NF logs with provenance |
+| RCA ingester | `rca-ingester/` | Parse, seal, correlate and expose evidence through the API |
+| Web application | `frontend/` | React/Vite operator dashboard |
 
-The component repositories are included in this parent repository as **Git submodules**.
+The frontend has moved out of `rca-ingester/demo-ui`. It polls the backend every three seconds. Correlation and procedure reconstruction remain in Python.
+
+The dashboard includes overview, searchable UE list, signalling timelines, registration troubleshooting, incidents and secondary normalized raw events. Registration acceptance and completion are distinct; missing evidence is not presented as a confirmed failure or invented root cause.
 
 ## Clone
+
+The core, radio, Kafka, agent and ingester components are Git submodules.
 
 ```bash
 git clone --recurse-submodules https://github.com/SystronLab/5g-Core-Inspector.git
 cd 5g-Core-Inspector
 ```
 
-If the repository was cloned without its submodules:
+If submodules were not initialized during cloning:
 
 ```bash
 git submodule update --init --recursive
 ```
 
----
+## Prerequisites
 
-# Installation
+- Linux with Bash, `setsid`, `curl`, Docker and Docker Compose; Docker accessible to the account running the startup script.
+- Python 3.10+ with virtual environment support, Node.js 20.19+ and npm.
+- Existing core images (`ocudu/open5gs-split` and `mongo:6`), configured split-core files and a provisioned subscriber. Startup does not build the core or initialize subscribers.
+- For the optional radio start: built OCUDU/OAI binaries, `gnb_oai.yaml`, `oaiue_zmq.conf`, and the networking/scheduling permissions required by the existing radio setup.
 
-The following steps are required for the initial installation.
+The [previous lab installation guide](docs/legacy-setup.md) preserves core image, subscriber and radio setup instructions. It is historical: use the commands below for Inspector, rather than its old demo UI, manual patching or fixed-secret instructions. Install npm dependencies using your normal development account.
 
-## 1. Stop Native Open5GS Services
+## Start the system
 
-The Docker-based 5G Core should not run alongside native Open5GS services using the same interfaces and ports.
-
-```bash
-sudo systemctl stop open5gs-mmed
-sudo systemctl stop open5gs-sgwcd
-sudo systemctl stop open5gs-smfd
-sudo systemctl stop open5gs-amfd
-sudo systemctl stop open5gs-sgwud
-sudo systemctl stop open5gs-upfd
-sudo systemctl stop open5gs-hssd
-sudo systemctl stop open5gs-pcrfd
-sudo systemctl stop open5gs-nrfd
-sudo systemctl stop open5gs-scpd
-sudo systemctl stop open5gs-seppd
-sudo systemctl stop open5gs-ausfd
-sudo systemctl stop open5gs-udmd
-sudo systemctl stop open5gs-pcfd
-sudo systemctl stop open5gs-nssfd
-sudo systemctl stop open5gs-bsfd
-sudo systemctl stop open5gs-udrd
-sudo systemctl stop open5gs-webui
-```
-
-## 2. Build the Split Open5GS Core
+From the repository root:
 
 ```bash
-cd ocudu
+./scripts/start.sh
 ```
 
-Pull MongoDB once:
+This starts or reuses the split core, Kafka, Kafka UI and log agent, installs backend/frontend dependencies, builds the frontend, and launches the continuous Kafka-consuming API and web server. It preserves existing subscriber data and Docker volumes. The core creates the network needed by Kafka before Kafka starts.
+
+To also start the existing local ZMQ gNB and OAI UE:
 
 ```bash
-sudo docker pull mongo:6
+./scripts/start.sh --with-radio
 ```
 
-Build the Open5GS image:
+The script keeps already-running host processes. When starting a fresh UE after the previous UE has exited, it restarts its own gNB if necessary to recover the ZMQ connection. Successful Inspector startup confirms API/frontend readiness; check the radio logs and UE timeline separately to confirm registration.
+
+| Component | Default endpoint |
+|---|---|
+| Inspector web UI | http://127.0.0.1:5173 |
+| API health | http://127.0.0.1:8000/api/health |
+| Kafka UI | http://localhost:8080 |
+| Kafka host listener | `localhost:9094` |
+| Kafka Docker listener | `kafka:9092` |
+| AMF N2 | `10.53.1.2:38412/SCTP` |
+| AMF / SMF metrics | `localhost:9090` / `localhost:9091` |
+| ZMQ radio link | `localhost:4556` / `localhost:4557` |
+
+### Configuration and runtime data
+
+Copy [.env.example](.env.example) to `.env` if you want to customize ports, broker address or consumer group. The startup script loads `.env` automatically.
+
+| Location | Contents |
+|---|---|
+| `.runtime/` | Host process IDs and startup/runtime logs |
+| `.runtime/run-secret` | Random run secret generated once when needed |
+| `rca-ingester/out/live/` | Durable sealed events and ingestion artifacts |
+
+These runtime locations and `.env` are ignored by Git. Keep the consumer group paired with its output directory: deleting the local output does not reset Kafka's committed offsets. A fresh historical reparse needs both a new group and a new output directory.
+
+## Stop and restart
+
+Stop the host processes launched by the script:
 
 ```bash
-sudo docker compose \
-  -f docker/open5gs-split/docker-compose.yml \
-  build --no-cache nrf
+./scripts/stop.sh
 ```
 
-For the parent repository layout, correct the subscriber helper mount if required:
+The script allows the UE to deregister before stopping the gNB, then stops the frontend and API. Core/Kafka containers and all volumes remain available.
+
+After backend code changes, stop and start again to load the updated code:
 
 ```bash
-sed -i \
-  's#../../../../open5gs/misc#../../../open5gs/misc#' \
-  docker/open5gs-split/docker-compose.yml
+./scripts/stop.sh
+./scripts/start.sh --with-radio
 ```
 
-Verify:
+To additionally stop the Docker services without deleting their data:
 
 ```bash
-grep -A6 'add_users.py' docker/open5gs-split/docker-compose.yml
+docker stop 5g-log-agent
+docker compose -p kafka-setup -f kafka-setup/docker-compose.kafka.yml stop
+docker compose -p open5gs-split -f ocudu/docker/open5gs-split/docker-compose.yml stop
 ```
 
-Start the split core:
+## Development
+
+Stop scripted host processes before running development servers on the same ports. Keep only one API/consumer writing to a given output directory.
+
+Backend, after installing dependencies with the startup script:
 
 ```bash
-sudo docker compose \
-  -f docker/open5gs-split/docker-compose.yml \
-  up -d \
-  --no-build \
-  --pull never \
-  mongodb nrf scp udr udm ausf pcf nssf bsf amf upf smf
+cd rca-ingester
+export S5_RUN_SECRET="$(cat ../.runtime/run-secret)"
+.venv/bin/python -m s5.api --out-dir out/live
 ```
 
-Check the containers:
+The API process includes the continuous Kafka consumer; a separate `main.py consume` process is not required for the dashboard.
+
+Frontend, in another terminal:
 
 ```bash
-sudo docker ps
-```
-
-## 3. Initialise the Test Subscriber
-
-```bash
-sudo docker compose \
-  -f docker/open5gs-split/docker-compose.yml \
-  up subscriber-init
-```
-
-Verify the subscriber:
-
-```bash
-sudo docker exec open5gs_mongodb \
-  mongosh open5gs --quiet \
-  --eval 'db.subscribers.find({}, {imsi:1, _id:0}).toArray()'
-```
-
-Test IMSI:
-
-```text
-001010123456780
-```
-
-## 4. Install Kafka
-
-```bash
-cd ../kafka-setup
-
-sudo docker compose \
-  -f docker-compose.kafka.yml \
-  up -d
-```
-
-Create the Kafka topics:
-
-```bash
-sudo docker compose \
-  -f docker-compose.kafka.yml \
-  exec kafka /scripts/create-topics.sh
-```
-
-Connect Kafka to the 5G Core network:
-
-```bash
-sudo docker network connect \
-  open5gs-split-5gc \
-  5gi-kafka
-```
-
-Kafka UI is available at:
-
-```text
-http://localhost:8080
-```
-
-## 5. Install the RCA Log Agent
-
-```bash
-cd ../rca-log-agent
-
-sudo docker build -t 5gi-log-agent:latest .
-
-sudo docker volume create 5gi-log-agent-data
-```
-
-Start the log agent:
-
-```bash
-sudo docker run -d \
-  --name 5g-log-agent \
-  --restart unless-stopped \
-  --network open5gs-split-5gc \
-  -e AGENT_ID=5g-log-agent-01 \
-  -e NF_FILTER=open5gs \
-  -e OUTPUT=kafka \
-  -e KAFKA_BROKERS=kafka:9092 \
-  -e KAFKA_TOPIC_PREFIX=5g.raw \
-  -e WATERMARK_DB=/data/watermarks.db \
-  -e LOG_LEVEL=DEBUG \
-  -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  -v 5gi-log-agent-data:/data \
-  5gi-log-agent:latest
-```
-
-Check:
-
-```bash
-sudo docker logs -f 5g-log-agent
-```
-
-## 6. Install the RCA Ingester
-
-```bash
-cd ../rca-ingester
-
-python3 -m venv .venv
-source .venv/bin/activate
-
-python3 -m pip install -r requirements.txt
-python3 -m pip install lz4
-```
-
-If `s5/consumer/kafka.py` still uses:
-
-```python
-self._consumer.commit({tp: offset + 1})
-```
-
-apply the Kafka offset compatibility patch:
-
-```bash
-sed -i \
-  's/from kafka.structs import TopicPartition  # type: ignore/from kafka.structs import OffsetAndMetadata, TopicPartition  # type: ignore/' \
-  s5/consumer/kafka.py
-
-sed -i \
-  's/self._consumer.commit({tp: offset + 1})/self._consumer.commit({tp: OffsetAndMetadata(offset + 1, None)})/' \
-  s5/consumer/kafka.py
-```
-
-## 7. Install the Demo UI
-
-```bash
-cd demo-ui
-
-sudo rm -rf node_modules
-sudo npm cache clean --force
-sudo npm install
-```
-
----
-
-# Running
-
-After installation, use the following startup sequence:
-
-```text
-1. Split Open5GS Core
-2. Kafka + Kafka UI
-3. RCA Log Agent
-4. OCUDU gNB
-5. OAI UE
-6. RCA Ingester
-7. Demo UI
-```
-
-## 1. Start Open5GS
-
-```bash
-cd ~/Desktop/5g-Core-Inspector/ocudu
-
-sudo docker compose \
-  -f docker/open5gs-split/docker-compose.yml \
-  up -d \
-  --no-build \
-  --pull never \
-  mongodb nrf scp udr udm ausf pcf nssf bsf amf upf smf
-```
-
-Do not remove MongoDB during normal startup because its volume contains subscriber state.
-
-## 2. Start Kafka
-
-```bash
-sudo docker start 5gi-kafka
-sudo docker start 5gi-kafka-ui
-```
-
-If Kafka is not connected to the core network:
-
-```bash
-sudo docker network connect \
-  open5gs-split-5gc \
-  5gi-kafka
-```
-
-Kafka UI:
-
-```text
-http://localhost:8080
-```
-
-## 3. Start the Log Agent
-
-```bash
-sudo docker start 5g-log-agent
-```
-
-Check:
-
-```bash
-sudo docker logs --tail 50 5g-log-agent
-```
-
-## 4. Start the OCUDU gNB
-
-In a separate terminal:
-
-```bash
-cd ~/Desktop/5g-Core-Inspector/ocudu/build/apps/gnb
-
-sudo ./gnb -c gnb_oai.yaml
-```
-
-The gNB should connect to the AMF at:
-
-```text
-10.53.1.2:38412
-```
-
-## 5. Start the OAI UE
-
-In another terminal:
-
-```bash
-cd ~/Desktop/5g-Core-Inspector/openairinterface5g/cmake_targets/ran_build/build
-
-sudo env LD_LIBRARY_PATH="$PWD" \
-  ./nr-uesoftmodem -O ./oaiue_zmq.conf
-```
-
-## 6. Start the RCA Ingester
-
-```bash
-cd ~/Desktop/5g-Core-Inspector/rca-ingester
-
-source .venv/bin/activate
-```
-
-Set the development run secret:
-
-```bash
-export S5_RUN_SECRET=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
-```
-
-Start the consumer:
-
-```bash
-python3 main.py consume \
-  --config s5-ingester.properties \
-  --services amf,smf,nrf,udm,ausf,pcf,udr,bsf,scp,nssf,upf
-```
-
-## 7. Start the Demo UI
-
-```bash
-cd ~/Desktop/5g-Core-Inspector/rca-ingester/demo-ui
-
-npm run refresh:data
+cd frontend
+npm ci
 npm run dev
 ```
 
-The terminal will display the local UI address, normally:
+Vite proxies `/api` to `http://127.0.0.1:8000`. Override that destination with `API_TARGET` when needed. `npm run build` creates `dist/`; `npm run preview` serves the build locally with the same API proxy. See [frontend instructions](frontend/README.md).
 
-```text
-http://localhost:5173
-```
+## API
 
----
+The UI polls `GET /api/snapshot` for a consistent dashboard payload. Individual endpoints are also available:
 
-# Verification
+- `GET /api/health`
+- `GET /api/overview`
+- `GET /api/ues`
+- `GET /api/ues/{url-encoded-id}`
+- `GET /api/ues/{url-encoded-id}/timeline`
+- `GET /api/procedures`
+- `GET /api/incidents`
+- `GET /api/events`
 
-Check Open5GS:
+Collection endpoints support `offset` and `limit`, with a maximum page size of 1,000. See [architecture and API details](docs/architecture.md).
 
-```bash
-sudo docker ps | grep open5gs
-```
+## Verification
 
-Check Kafka:
-
-```bash
-sudo docker ps | grep 5gi-kafka
-```
-
-Check the log agent:
+Check the actual running pipeline:
 
 ```bash
-sudo docker ps | grep 5g-log-agent
-sudo docker logs --tail 100 5g-log-agent
+curl -fsS http://127.0.0.1:8000/api/health
+curl -fsS http://127.0.0.1:8000/api/overview
+docker ps
+docker exec 5gi-kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --group 5g-inspector-live --describe
 ```
 
-Check the subscriber:
+Use your configured group name if it differs from the default. A health response reports the consumer, API and broker reachability; core/agent status still requires separate Docker checks.
+
+Run backend and replay checks:
 
 ```bash
-sudo docker exec open5gs_mongodb \
-  mongosh open5gs --quiet \
-  --eval 'db.subscribers.find({}, {imsi:1, _id:0}).toArray()'
+cd rca-ingester
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m tests.replay_selftest
+.venv/bin/python -m compileall -q s5 main.py
 ```
 
-Kafka topics should include:
+Replay tests use isolated fixture output. They do not publish fixtures to live Kafka or serve them to the frontend. The [verification report](docs/verification.md) records the tested real registration/deregistration flow, browser checks and remaining limits.
 
-```text
-5g.raw.amf
-5g.raw.smf
-5g.raw.nrf
-5g.raw.ausf
-5g.raw.udm
-5g.raw.udr
-5g.raw.pcf
-5g.raw.nssf
-5g.raw.bsf
-5g.raw.scp
-5g.raw.upf
-```
+## Current scope
 
-For UE registration, inspect `5g.raw.amf` in Kafka UI for registration events such as `InitialUEMessage`.
+This is a local operator MVP. The projection retains up to 45,000 UE/failure records plus 5,000 recent records; dashboard counts describe retained evidence. The raw view shows the latest 500 normalized records, with technical provenance rather than unredacted protocol payloads.
 
----
+Some NF session events lack reliable UE associations. A PDU context is not proof of internet connectivity. Ambiguous identities and unsupported root causes remain unresolved. Larger deployments need indexed storage, stronger lifecycle handling and appropriate access controls. See [architecture and limitations](docs/architecture.md).
 
-# Shutdown
-
-Stop the log agent and Kafka:
-
-```bash
-sudo docker stop 5g-log-agent
-sudo docker stop 5gi-kafka-ui
-sudo docker stop 5gi-kafka
-```
-
-Stop Open5GS:
-
-```bash
-cd ~/Desktop/5g-Core-Inspector/ocudu
-
-sudo docker compose \
-  -f docker/open5gs-split/docker-compose.yml \
-  stop
-```
-
-Stop the gNB, UE, RCA Ingester, and UI using `Ctrl+C` in their respective terminals.
-
----
-
-## Goal
-
-The project aims to move beyond raw log viewing:
-
-```text
-Raw NF Logs
-    ↓
-Cross-NF Correlation
-    ↓
-UE / Procedure Timeline
-    ↓
-Incident Timeline
-    ↓
-Root-Cause Analysis
-```
-
-The current prototype uses deterministic/rule-based correlation, with AI/ML-assisted analysis planned as future work.
+When contributing, commit backend changes inside the `rca-ingester` submodule and record its updated revision in the parent repository alongside frontend/orchestration changes. Preserve unrelated local core/radio configuration and runtime data.
