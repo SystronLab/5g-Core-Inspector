@@ -1,0 +1,18 @@
+[submodule "ocudu"]
+	path = ocudu
+	url = https://github.com/SystronLab/ocudu.git
+[submodule "kafka-setup"]
+	path = kafka-setup
+	url = https://github.com/SystronLab/kafka-setup.git
+[submodule "rca-log-agent"]
+	path = rca-log-agent
+	url = https://github.com/SystronLab/rca-log-agent.git
+[submodule "rca-ingester"]
+	path = rca-ingester
+	url = https://github.com/SystronLab/rca-ingester.git
+[submodule "openairinterface5g"]
+	path = openairinterface5g
+	url = https://gitlab.eurecom.fr/oai/openairinterface5g.git
+[submodule "open5gs"]
+	path = open5gs
+	url = https://github.com/SystronLab/open5gs.git
