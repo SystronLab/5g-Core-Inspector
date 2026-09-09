@@ -1,0 +1,28 @@
+# Reuses the existing Kafka and core networks. Core and broker remain in their
+# original Compose projects, preserving their volumes and container names.
+services:
+  log-agent:
+    build: ./rca-log-agent
+    image: 5gi-log-agent:latest
+    container_name: 5g-log-agent
+    restart: unless-stopped
+    environment:
+      AGENT_ID: 5g-log-agent-01
+      NF_FILTER: open5gs
+      OUTPUT: kafka
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_TOPIC_PREFIX: 5g.raw
+      WATERMARK_DB: /data/watermarks.db
+      LOG_LEVEL: INFO
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - log-agent-data:/data
+    networks:
+      - core
+volumes:
+  log-agent-data:
+    name: 5gi-log-agent-data
+networks:
+  core:
+    external: true
+    name: open5gs-split-5gc
