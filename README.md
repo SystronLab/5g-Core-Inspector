@@ -254,12 +254,10 @@ sed -i \
 ```bash
 cd demo-ui
 
-rm -rf node_modules
-npm cache clean --force
-npm install
+sudo rm -rf node_modules
+sudo npm cache clean --force
+sudo npm install
 ```
-
-Do not use `sudo npm install`, as it can create root-owned files in the npm cache or `node_modules`.
 
 ---
 
