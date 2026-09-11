@@ -9,17 +9,27 @@ import {
   Users,
   XCircle,
   Clock3,
+  LayoutDashboard,
+  Smartphone,
+  ScrollText,
+  RefreshCw,
 } from "lucide-react";
 import Metric from "./Metric";
 import "./styles.css";
 
 const tabs = [
-  "Overview",
-  "UE list",
-  "Registration troubleshooting",
-  "Incidents",
-  "Raw events",
+  ["Overview", LayoutDashboard],
+  ["UE list", Smartphone],
+  ["Incidents", AlertTriangle],
+  ["NF health", Activity],
+  ["Raw events", ScrollText],
+  ["Registration troubleshooting", Network],
 ];
+const tabLabels = {
+  "UE list": "UE sessions",
+  "Registration troubleshooting": "Rules",
+  "Raw events": "Raw logs",
+};
 const human = (value) => String(value ?? "Unknown").replaceAll("_", " ");
 const time = (value) =>
   value
@@ -160,49 +170,121 @@ function Procedures({ items, openUE }) {
     </section>
   );
 }
-function Incidents({ items, openUE }) {
+function IncidentCard({ incident: i, openUE }) {
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2>Incident evidence</h2>
-        <span>{items.length} observations</span>
+    <article className="incident">
+      <AlertTriangle size={18} />
+      <div><h3>{i.title}</h3><p>{i.cause}</p><small>{i.nf?.toUpperCase()} · {time(i.time)} UTC · {i.evidence.length} evidence records</small>
+        {i.ue_id && <button className="link" onClick={() => openUE(i.ue_id)}>Open UE timeline → {i.ue_id}</button>}
       </div>
-      {!items.length && (
-        <Empty>
-          No failure or repeated-attempt evidence in the retained events.
-        </Empty>
-      )}
-      {items.map((i) => (
-        <article className="incident" key={i.id}>
-          <AlertTriangle size={19} />
-          <div>
-            <h3>{i.title}</h3>
-            <p>{i.cause}</p>
-            <small>
-              {i.nf?.toUpperCase()} · {time(i.time)} UTC · {i.evidence.length}{" "}
-              evidence records
-            </small>
-            {i.root_cause && (
-              <p className="rule">
-                Rule classification: {human(i.root_cause.domain)} ·{" "}
-                {i.root_cause.reason}
-              </p>
-            )}
-            {!i.root_cause && <p className="muted">Root cause undetermined</p>}
-            {i.ue_id ? (
-              <button className="link" onClick={() => openUE(i.ue_id)}>
-                Open UE timeline → {i.ue_id}
-              </button>
-            ) : (
-              <span className="muted">
-                No UE association in source evidence
-              </span>
-            )}
-          </div>
-        </article>
-      ))}
+    </article>
+  );
+}
+function Incidents({ items, openUE, compact = false }) {
+  const [selectedId, setSelectedId] = useState(null);
+  const selectedIncident = items.find((i) => i.id === selectedId) || items[0];
+  if (compact) return (
+    <section className="panel"><div className="panel-header"><h2>Related incidents</h2><span>{items.length}</span></div>
+      {!items.length ? <Empty>No incident evidence for this UE.</Empty> : items.map((i) => <IncidentCard key={i.id} incident={i} openUE={openUE} />)}
     </section>
   );
+  return (
+    <div className="incident-workspace">
+      <div className="incident-tools">
+        <input placeholder="Search incident or SUPI" />
+        <button>All severities <span>⌄</span></button>
+        <button>Last hour <span>⌄</span></button>
+      </div>
+      <section className="incident-stats">
+        <div><small>Open incidents</small><strong className="red-number">{items.length}</strong></div>
+        <div><small>Affected UEs</small><strong>{new Set(items.map((i) => i.ue_id).filter(Boolean)).size}</strong></div>
+        <div><small>Resolved today</small><strong>0</strong></div>
+      </section>
+      <div className="incident-split">
+        <section className="panel incident-list-panel"><div className="panel-header"><h2>Active incidents</h2><span>Grouped by observed failure</span></div>
+          {!items.length ? <Empty>No failure or repeated-attempt evidence in the retained events.</Empty> : items.map((i) => (
+            <button key={i.id} className={`incident-list-row ${selectedIncident?.id === i.id ? "selected" : ""}`} onClick={() => setSelectedId(i.id)}>
+              <span className="severity-dot"/><span><strong>{i.title}</strong><small>{i.nf?.toUpperCase()} · {time(i.time)} UTC<br/>{i.cause}</small></span><span>{i.evidence.length}<small>events</small></span>
+            </button>))}
+        </section>
+        <section className="panel incident-detail"><div className="panel-header"><h2>Incident details</h2></div>
+          {selectedIncident ? <div className="incident-detail-body"><div className="incident-id"><Status value="failure"/><small>{selectedIncident.id}</small></div><h2>{selectedIncident.title}</h2><p>{selectedIncident.cause}</p>
+            <div className="cause-box"><strong>Observed failure evidence</strong><p>{selectedIncident.root_cause?.reason || "No deterministic root cause can be established from the retained evidence."}</p></div>
+            <h4>Correlated evidence</h4><div className="detail-kv"><span>Network function</span><b>{selectedIncident.nf?.toUpperCase()}</b></div><div className="detail-kv"><span>Evidence records</span><b>{selectedIncident.evidence.length}</b></div><div className="detail-kv"><span>Observed at</span><b>{time(selectedIncident.time)} UTC</b></div>
+            {selectedIncident.ue_id && <button className="open-timeline" onClick={() => openUE(selectedIncident.ue_id)}>Open UE timeline →</button>}
+          </div> : <Empty>Select an incident to inspect its evidence.</Empty>}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function OverviewWorkspace({ data, openUE }) {
+  const procedures = data.procedures.slice().reverse();
+  const [selectedId, setSelectedId] = useState(null);
+  const selectedProcedure = procedures.find((p) => p.id === selectedId) || procedures[0];
+  const selectedUE = selectedProcedure ? data.ues.find((u) => u.id === selectedProcedure.ue_id) : data.ues[0];
+  const stages = selectedUE?.timeline.filter((e) => e.is_procedure_stage).slice(-7) || [];
+  return <>
+    <div className="overview-tools"><input placeholder="Search SUPI or UE ID"/><button>Last 15 minutes <span>⌄</span></button></div>
+    <section className="overview-metrics">
+      {[["Connected UEs",data.summary.active_ues,"neutral"],["Successful registrations",data.summary.successful_registrations,"good"],["Failed registrations",data.summary.failed_registrations,"bad"],["Active PDU sessions",data.summary.active_pdu_sessions,"neutral"]].map(([label,value,tone]) => <div className={`overview-stat ${tone}`} key={label}><small>{label}</small><strong>{value}</strong></div>)}
+    </section>
+    <div className="overview-split">
+      <section className="panel recent-procedures"><div className="panel-header"><h2>Recent UE procedures</h2></div>
+        <div className="procedure-head"><span>UE</span><span>Procedure</span><span>Progress</span></div>
+        {!procedures.length ? <Empty>No UE procedures observed in this capture.</Empty> : procedures.slice(0,8).map((p) => <button className={`procedure-row ${p.id === selectedProcedure?.id ? "selected" : ""}`} key={p.id} onClick={() => setSelectedId(p.id)}>
+          <span>…{p.ue_id.slice(-4)}</span><span>{human(p.latest_procedure || "Initial registration")}</span><span className="progress"><i style={{width:p.outcome === "success" ? "100%" : p.outcome === "failure" ? "72%" : "55%"}}/></span>
+        </button>)}
+      </section>
+      <section className="panel procedure-detail-panel"><div className="panel-header"><h2>Procedure details</h2></div>
+        {selectedUE ? <div className="procedure-detail-body"><button className="detail-supi" onClick={() => openUE(selectedUE.id)}>SUPI {selectedUE.supi || selectedUE.id}</button><small>{selectedUE.identifiers?.gnb_id ? `gNB ${selectedUE.identifiers.gnb_id} · ` : ""}{selectedUE.timeline.length} correlated events</small><div className="mini-timeline">
+          {stages.map((e) => <div key={e.id} className={e.outcome === "failure" ? "failed" : ""}><span>{e.outcome === "failure" ? "!" : "✓"}</span><b>{e.stage}</b><time>{new Date(e.time).toLocaleTimeString("en-GB",{hour12:false})}</time></div>)}
+        </div>{selectedProcedure?.outcome === "failure" && <div className="failure-callout"><strong>Registration failed at {selectedProcedure.stopped_at || "an observed stage"}</strong><p>{selectedProcedure.cause || "No explicit failure cause was reported."}</p></div>}<button className="raw-action" onClick={() => openUE(selectedUE.id)}>View correlated timeline</button></div> : <Empty>Select a procedure to inspect its signalling stages.</Empty>}
+      </section>
+    </div>
+  </>;
+}
+
+function NFHealth({ data }) {
+  const functions = ["amf", "smf", "upf", "ausf", "udm", "nrf", "pcf", "nssf"];
+  const latestByNF = Object.fromEntries(functions.map((nf) => [nf, data.events.find((event) => event.nf === nf)]));
+  const observed = functions.filter((nf) => latestByNF[nf]);
+  const unavailable = functions.length - observed.length;
+  const [selectedNF, setSelectedNF] = useState(observed[0] || "amf");
+  const selectedEvent = latestByNF[selectedNF];
+  const signals = data.events.filter((event) => event.nf === selectedNF).slice(0, 5);
+  const ago = (value) => {
+    if (!value) return "Not observed";
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+    return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
+  };
+  return <div className="nf-workspace">
+    <button className="refresh-checks"><RefreshCw size={15}/>Refresh checks</button>
+    <div className="nf-summary"><b>{observed.length} observed</b><strong>{unavailable} no data</strong><span>{data.incidents.length} related incidents</span></div>
+    <div className="nf-grid">{functions.map((nf) => {
+      const event = latestByNF[nf];
+      const status = event ? (event.outcome === "failure" ? "Degraded" : "Healthy") : "No data";
+      return <button key={nf} className={`nf-card ${selectedNF === nf ? "selected" : ""}`} onClick={() => setSelectedNF(nf)}>
+        <span className="nf-card-title"><b>{nf.toUpperCase()}</b><i className={status.toLowerCase().replace(" ", "-")}>{status}</i></span>
+        <small>Evidence source: {event?.source?.container_name || "Not observed"}</small>
+        <small>Last log: {ago(event?.time)}</small>
+        <small>Recent outcome: {event ? human(event.outcome) : "Not checked"}</small>
+      </button>;
+    })}</div>
+    <section className="panel service-map"><div className="panel-header"><h2>Service communication</h2><span>Retained evidence</span></div><div className="service-nodes">
+      <div className="service-path"><span>gNB</span><i>→</i>{["amf","smf","upf"].map((nf, index) => <React.Fragment key={nf}><span className={latestByNF[nf] ? "seen" : "missing"}>{nf.toUpperCase()}</span>{index < 2 && <i>→</i>}</React.Fragment>)}</div>
+      <div className="service-row">{["ausf","udm","nrf","pcf"].map((nf) => <span className={latestByNF[nf] ? "seen" : "missing"} key={nf}>{nf.toUpperCase()}</span>)}</div>
+      {unavailable > 0 && <p>△ Some network functions have no evidence in the current retained window</p>}
+    </div></section>
+    <section className="panel selected-nf"><div className="panel-header"><h2>Selected NF</h2></div><div className="selected-nf-body">
+      <div className="selected-nf-title"><h3>{selectedNF.toUpperCase()}</h3><Status value={selectedEvent ? selectedEvent.outcome === "failure" ? "degraded" : "healthy" : "unreachable"}/></div>
+      <div className="detail-kv"><span>Evidence source</span><b>{selectedEvent?.source?.container_name || "Not observed"}</b></div>
+      <div className="detail-kv"><span>Last log received</span><b>{ago(selectedEvent?.time)}</b></div>
+      <div className="detail-kv"><span>Observed events</span><b>{data.events.filter((event) => event.nf === selectedNF).length}</b></div>
+      <h4>Recent signals</h4>{signals.length ? signals.map((event) => <div className="nf-signal" key={event.id}><span className={event.outcome === "failure" ? "failure" : "success"}/><b>{event.stage}</b><time>{new Date(event.time).toLocaleTimeString("en-GB", {hour12:false})}</time></div>) : <p className="muted">No signals observed for this function.</p>}
+    </div></section>
+  </div>;
 }
 
 function App() {
@@ -210,7 +292,7 @@ function App() {
     [error, setError] = useState(""),
     [updated, setUpdated] = useState(null);
   const [showAll, setShowAll] = useState(false);
-  const [tab, setTab] = useState("Overview"),
+  const [tab, setTab] = useState(window.location.hash === "#incidents" ? "Incidents" : window.location.hash === "#nf-health" ? "NF health" : "Overview"),
     [selected, setSelected] = useState(null),
     [search, setSearch] = useState("");
   useEffect(() => {
@@ -259,23 +341,32 @@ function App() {
         u.id.toLowerCase().includes(search.toLowerCase()),
     ) || [];
   return (
-    <div className="shell">
-      <aside>
+    <div className="app-frame">
+      <header className="app-header">
         <div className="brand">
           <RadioTower />
-          <div>
-            5G CORE<strong>INSPECTOR</strong>
-          </div>
+          <strong>5G Core Inspector</strong>
         </div>
+        <div className={`live ${error ? "offline" : ""}`}>
+          <span className="live-dot" />
+          {error ? "Offline" : data?.health.status === "ok" ? "Live" : "Checking"}
+        </div>
+        <span className="app-updated">
+          Open5GS · {updated ? `Updated ${updated.toLocaleTimeString()}` : "Connecting…"}
+        </span>
+      </header>
+      <div className="shell">
+      <aside>
         <div className="nav-label">OPERATIONS</div>
         <nav>
-          {tabs.map((t) => (
+          {tabs.map(([t, Icon]) => (
             <button
               className={tab === t ? "active" : ""}
               key={t}
               onClick={() => setTab(t)}
             >
-              {t}
+              <Icon size={16} />
+              {tabLabels[t] || t}
             </button>
           ))}
           {selected && (
@@ -283,6 +374,7 @@ function App() {
               className={tab === "UE timeline" ? "active" : ""}
               onClick={() => setTab("UE timeline")}
             >
+              <Clock3 size={16} />
               UE timeline
             </button>
           )}
@@ -297,25 +389,10 @@ function App() {
         <header className="topbar">
           <div>
             <p className="eyebrow">NETWORK OPERATIONS / LIVE EVIDENCE</p>
-            <h1>{tab}</h1>
+            <h1>{tab === "Overview" ? "Network overview" : tab === "NF health" ? "Network Function Health" : tab}</h1>
             <p className="muted">
-              UE procedures, signalling sequences and evidence-backed
-              troubleshooting
+              {tab === "Overview" ? "Device-centric view of registration and PDU sessions" : tab === "Incidents" ? "Correlated failures requiring operator attention" : tab === "NF health" ? "Container state, log activity and service communication" : "UE procedures, signalling sequences and evidence-backed troubleshooting"}
             </p>
-          </div>
-          <div className="live">
-            <Activity size={16} />
-            {error
-              ? "Connection lost"
-              : data?.health.status === "ok"
-                ? "Live pipeline"
-                : "Pipeline degraded"}
-            <small>
-              {updated
-                ? `Updated ${updated.toLocaleTimeString()}`
-                : "Connecting…"}{" "}
-              · refresh 3s
-            </small>
           </div>
         </header>
         {error && (
@@ -344,66 +421,7 @@ function App() {
               event times are UTC.
             </div>
             {tab === "Overview" && (
-              <>
-                <section className="metrics-grid">
-                  {[
-                    [Users, "Observed UEs", "observed_ues"],
-                    [Activity, "Registered UEs", "active_ues"],
-                    [
-                      CheckCircle2,
-                      "Successful registrations",
-                      "successful_registrations",
-                    ],
-                    [XCircle, "Failed registrations", "failed_registrations"],
-                    [Network, "Active PDU sessions", "active_pdu_sessions"],
-                    [AlertTriangle, "Incident observations", "incidents"],
-                  ].map(([icon, label, key]) => (
-                    <Metric
-                      key={key}
-                      icon={icon}
-                      label={label}
-                      value={data.summary[key]}
-                      tone={key.includes("failed") ? "red" : "neutral"}
-                    />
-                  ))}
-                </section>
-                <section className="panel">
-                  <div className="panel-header">
-                    <h2>Pipeline status</h2>
-                    <span>
-                      {data.summary.events.toLocaleString()} normalized events
-                    </span>
-                  </div>
-                  <div className="pipeline">
-                    {[
-                      ["5G Core", data.health.core],
-                      ["Log agent", data.health.log_agent],
-                      ["Kafka TCP", data.health.kafka_tcp],
-                      ["RCA consumer", data.health.consumer],
-                      ["API", data.health.api],
-                    ].map(([name, status]) => (
-                      <div key={name}>
-                        <strong>{name}</strong>
-                        <Status value={status} />
-                      </div>
-                    ))}
-                  </div>
-                  <p className="muted">
-                    Last durable ingestion:{" "}
-                    {data.health.last_ingested_at
-                      ? time(data.health.last_ingested_at * 1000)
-                      : "No data"}{" "}
-                    UTC. Reachability does not prove that every NF is producing
-                    logs.
-                  </p>
-                </section>
-                <UEList
-                  rows={rows}
-                  search={search}
-                  setSearch={setSearch}
-                  openUE={openUE}
-                />
-              </>
+              <OverviewWorkspace data={data} openUE={openUE}/>
             )}
             {tab === "UE list" && (
               <UEList
@@ -418,6 +436,9 @@ function App() {
             )}
             {tab === "Incidents" && (
               <Incidents openUE={openUE} items={data.incidents} />
+            )}
+            {tab === "NF health" && (
+              <NFHealth data={data} />
             )}
             {tab === "UE timeline" &&
               (ue ? (
@@ -488,6 +509,7 @@ function App() {
                     <div>
                       <Procedures openUE={openUE} items={ue.procedures} />
                       <Incidents
+                        compact
                         openUE={openUE}
                         items={data.incidents.filter((i) => i.ue_id === ue.id)}
                       />
@@ -555,6 +577,7 @@ function App() {
           </>
         )}
       </main>
+      </div>
     </div>
   );
 }
