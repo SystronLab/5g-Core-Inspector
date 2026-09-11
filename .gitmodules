@@ -10,9 +10,9 @@
 [submodule "rca-ingester"]
 	path = rca-ingester
 	url = https://github.com/SystronLab/rca-ingester.git
-[submodule "openairinterface5g"]
-	path = openairinterface5g
-	url = https://gitlab.eurecom.fr/oai/openairinterface5g.git
 [submodule "open5gs"]
 	path = open5gs
 	url = https://github.com/SystronLab/open5gs.git
+[submodule "openairinterfaceue"]
+	path = openairinterfaceue
+	url = https://github.com/SystronLab/openairinterfaceue.git
