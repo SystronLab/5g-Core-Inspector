@@ -1,33 +1,37 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Network,
-  RadioTower,
-  Users,
-  XCircle,
-  Clock3,
-  LayoutDashboard,
-  Smartphone,
-  ScrollText,
-  RefreshCw,
-} from "lucide-react";
+import { faCircleCheck } from "@fortawesome/free-solid-svg-icons/faCircleCheck";
+import { faCircleXmark } from "@fortawesome/free-solid-svg-icons/faCircleXmark";
+import { faClock } from "@fortawesome/free-solid-svg-icons/faClock";
+import { faMobileScreenButton } from "@fortawesome/free-solid-svg-icons/faMobileScreenButton";
+import { faRotate } from "@fortawesome/free-solid-svg-icons/faRotate";
+import { faScroll } from "@fortawesome/free-solid-svg-icons/faScroll";
+import { faTableCellsLarge } from "@fortawesome/free-solid-svg-icons/faTableCellsLarge";
+import { faTowerBroadcast } from "@fortawesome/free-solid-svg-icons/faTowerBroadcast";
+import { faTriangleExclamation } from "@fortawesome/free-solid-svg-icons/faTriangleExclamation";
+import { faWaveSquare } from "@fortawesome/free-solid-svg-icons/faWaveSquare";
 import Metric from "./Metric";
 import "./styles.css";
 
+function FontAwesomeIcon({ icon, className = "" }) {
+  const [width, height, , , path] = icon.icon;
+  return <svg className={className} aria-hidden="true" viewBox={`0 0 ${width} ${height}`} fill="currentColor" focusable="false">
+    {Array.isArray(path)
+      ? path.map((part, index) => <path d={part} key={index}/>)
+      : <path d={path}/>
+    }
+  </svg>;
+}
+
 const tabs = [
-  ["Overview", LayoutDashboard],
-  ["UE list", Smartphone],
-  ["Incidents", AlertTriangle],
-  ["NF health", Activity],
-  ["Raw events", ScrollText],
-  ["Registration troubleshooting", Network],
+  ["Overview", faTableCellsLarge],
+  ["UE list", faMobileScreenButton],
+  ["Incidents", faTriangleExclamation],
+  ["NF health", faWaveSquare],
+  ["Raw events", faScroll],
 ];
 const tabLabels = {
   "UE list": "UE sessions",
-  "Registration troubleshooting": "Rules",
   "Raw events": "Raw logs",
 };
 const human = (value) => String(value ?? "Unknown").replaceAll("_", " ");
@@ -173,7 +177,7 @@ function Procedures({ items, openUE }) {
 function IncidentCard({ incident: i, openUE }) {
   return (
     <article className="incident">
-      <AlertTriangle size={18} />
+      <FontAwesomeIcon icon={faTriangleExclamation} />
       <div><h3>{i.title}</h3><p>{i.cause}</p><small>{i.nf?.toUpperCase()} · {time(i.time)} UTC · {i.evidence.length} evidence records</small>
         {i.ue_id && <button className="link" onClick={() => openUE(i.ue_id)}>Open UE timeline → {i.ue_id}</button>}
       </div>
@@ -248,7 +252,7 @@ function OverviewWorkspace({ data, openUE }) {
 
 function NFHealth({ data }) {
   const functions = ["amf", "smf", "upf", "ausf", "udm", "nrf", "pcf", "nssf"];
-  const latestByNF = Object.fromEntries(functions.map((nf) => [nf, data.events.find((event) => event.nf === nf)]));
+  const latestByNF = Object.fromEntries(functions.map((nf) => [nf, data.nf_health?.[nf]?.latest_event || data.events.find((event) => event.nf === nf)]));
   const observed = functions.filter((nf) => latestByNF[nf]);
   const unavailable = functions.length - observed.length;
   const [selectedNF, setSelectedNF] = useState(observed[0] || "amf");
@@ -260,7 +264,7 @@ function NFHealth({ data }) {
     return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
   };
   return <div className="nf-workspace">
-    <button className="refresh-checks"><RefreshCw size={15}/>Refresh checks</button>
+    <button className="refresh-checks"><FontAwesomeIcon icon={faRotate}/>Refresh checks</button>
     <div className="nf-summary"><b>{observed.length} observed</b><strong>{unavailable} no data</strong><span>{data.incidents.length} related incidents</span></div>
     <div className="nf-grid">{functions.map((nf) => {
       const event = latestByNF[nf];
@@ -281,7 +285,7 @@ function NFHealth({ data }) {
       <div className="selected-nf-title"><h3>{selectedNF.toUpperCase()}</h3><Status value={selectedEvent ? selectedEvent.outcome === "failure" ? "degraded" : "healthy" : "unreachable"}/></div>
       <div className="detail-kv"><span>Evidence source</span><b>{selectedEvent?.source?.container_name || "Not observed"}</b></div>
       <div className="detail-kv"><span>Last log received</span><b>{ago(selectedEvent?.time)}</b></div>
-      <div className="detail-kv"><span>Observed events</span><b>{data.events.filter((event) => event.nf === selectedNF).length}</b></div>
+      <div className="detail-kv"><span>Observed events</span><b>{data.nf_health?.[selectedNF]?.event_count || data.events.filter((event) => event.nf === selectedNF).length}</b></div>
       <h4>Recent signals</h4>{signals.length ? signals.map((event) => <div className="nf-signal" key={event.id}><span className={event.outcome === "failure" ? "failure" : "success"}/><b>{event.stage}</b><time>{new Date(event.time).toLocaleTimeString("en-GB", {hour12:false})}</time></div>) : <p className="muted">No signals observed for this function.</p>}
     </div></section>
   </div>;
@@ -343,9 +347,15 @@ function App() {
   return (
     <div className="app-frame">
       <header className="app-header">
-        <div className="brand">
-          <RadioTower />
-          <strong>5G Core Inspector</strong>
+        <div className="header-identity">
+          <a className="systron-wordmark" href="https://systronlab.github.io/" target="_blank" rel="noreferrer" aria-label="SYSTRON Lab website">
+            <span>SYS</span>TRON
+          </a>
+          <span className="header-divider" />
+          <div className="brand">
+            <FontAwesomeIcon icon={faTowerBroadcast} />
+            <strong>5G Core Inspector</strong>
+          </div>
         </div>
         <div className={`live ${error ? "offline" : ""}`}>
           <span className="live-dot" />
@@ -359,13 +369,13 @@ function App() {
       <aside>
         <div className="nav-label">OPERATIONS</div>
         <nav>
-          {tabs.map(([t, Icon]) => (
+          {tabs.map(([t, icon]) => (
             <button
               className={tab === t ? "active" : ""}
               key={t}
               onClick={() => setTab(t)}
             >
-              <Icon size={16} />
+              <FontAwesomeIcon icon={icon} />
               {tabLabels[t] || t}
             </button>
           ))}
@@ -374,7 +384,7 @@ function App() {
               className={tab === "UE timeline" ? "active" : ""}
               onClick={() => setTab("UE timeline")}
             >
-              <Clock3 size={16} />
+              <FontAwesomeIcon icon={faClock} />
               UE timeline
             </button>
           )}
@@ -431,9 +441,6 @@ function App() {
                 openUE={openUE}
               />
             )}
-            {tab === "Registration troubleshooting" && (
-              <Procedures openUE={openUE} items={data.procedures} />
-            )}
             {tab === "Incidents" && (
               <Incidents openUE={openUE} items={data.incidents} />
             )}
@@ -481,11 +488,11 @@ function App() {
                             >
                               <div className="timeline-dot">
                                 {e.outcome === "failure" ? (
-                                  <XCircle size={17} />
+                                  <FontAwesomeIcon icon={faCircleXmark} />
                                 ) : e.outcome === "success" ? (
-                                  <CheckCircle2 size={17} />
+                                  <FontAwesomeIcon icon={faCircleCheck} />
                                 ) : (
-                                  <Clock3 size={17} />
+                                  <FontAwesomeIcon icon={faClock} />
                                 )}
                               </div>
                               <div className="timeline-body">
@@ -578,6 +585,19 @@ function App() {
         )}
       </main>
       </div>
+      <footer className="app-footer">
+        <div className="footer-product">
+          <span className="footer-mark"><b>SYS</b>TRON</span>
+          <span>5G Core Inspector</span>
+          <small>Evidence-led visibility for Open5GS networks.</small>
+        </div>
+        <div className="footer-meta">
+          <span><i className={`footer-status ${error ? "offline" : ""}`} />{error ? "System offline" : "Live monitoring active"}</span>
+          <a href="https://systronlab.github.io/" target="_blank" rel="noreferrer">SYSTRON Lab</a>
+          <a href="https://github.com/SystronLab/5g-Core-Inspector" target="_blank" rel="noreferrer">GitHub</a>
+          <small>© {new Date().getFullYear()} SYSTRON Lab</small>
+        </div>
+      </footer>
     </div>
   );
 }

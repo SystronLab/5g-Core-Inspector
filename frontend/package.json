@@ -5,14 +5,13 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@fortawesome/free-solid-svg-icons": "^7.3.1",
     "@vitejs/plugin-react": "^5.0.4",
-    "vite": "^7.1.9",
-    "typescript": "^5.9.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "lucide-react": "^0.545.0"
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
   },
-  "devDependencies": {},
   "name": "5g-core-inspector-frontend",
   "private": true,
   "type": "module"
