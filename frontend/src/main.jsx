@@ -253,7 +253,14 @@ function OverviewWorkspace({ data, openUE }) {
 function NFHealth({ data }) {
   const functions = ["amf", "smf", "upf", "ausf", "udm", "nrf", "pcf", "nssf"];
   const latestByNF = Object.fromEntries(functions.map((nf) => [nf, data.nf_health?.[nf]?.latest_event || data.events.find((event) => event.nf === nf)]));
-  const observed = functions.filter((nf) => latestByNF[nf]);
+  const statusFor = (nf) => {
+    const runtime = data.nf_health?.[nf]?.runtime_status;
+    const event = latestByNF[nf];
+    if (runtime === "stopped") return "Unreachable";
+    if (runtime === "running") return event?.outcome === "failure" ? "Degraded" : "Healthy";
+    return event ? (event.outcome === "failure" ? "Degraded" : "Healthy") : "No data";
+  };
+  const observed = functions.filter((nf) => statusFor(nf) === "Healthy" || statusFor(nf) === "Degraded");
   const unavailable = functions.length - observed.length;
   const [selectedNF, setSelectedNF] = useState(observed[0] || "amf");
   const selectedEvent = latestByNF[selectedNF];
@@ -268,17 +275,18 @@ function NFHealth({ data }) {
     <div className="nf-summary"><b>{observed.length} observed</b><strong>{unavailable} no data</strong><span>{data.incidents.length} related incidents</span></div>
     <div className="nf-grid">{functions.map((nf) => {
       const event = latestByNF[nf];
-      const status = event ? (event.outcome === "failure" ? "Degraded" : "Healthy") : "No data";
+      const status = statusFor(nf);
       return <button key={nf} className={`nf-card ${status.toLowerCase().replace(" ", "-")} ${selectedNF === nf ? "selected" : ""}`} onClick={() => setSelectedNF(nf)}>
         <span className="nf-card-title"><b>{nf.toUpperCase()}</b><i className={status.toLowerCase().replace(" ", "-")}>{status}</i></span>
         <small>Evidence source: {event?.source?.container_name || "Not observed"}</small>
         <small>Last log: {ago(event?.time)}</small>
-        <small>Recent outcome: {event ? human(event.outcome) : "Not checked"}</small>
+        <small>Runtime: {human(data.nf_health?.[nf]?.container_status || "unknown")}</small>
       </button>;
     })}</div>
     <section className="panel selected-nf"><div className="panel-header"><h2>Selected NF</h2></div><div className="selected-nf-body">
-      <div className="selected-nf-title"><h3>{selectedNF.toUpperCase()}</h3><Status value={selectedEvent ? selectedEvent.outcome === "failure" ? "degraded" : "healthy" : "unreachable"}/></div>
+      <div className="selected-nf-title"><h3>{selectedNF.toUpperCase()}</h3><Status value={statusFor(selectedNF).toLowerCase().replace(" ", "-")}/></div>
       <div className="detail-kv"><span>Evidence source</span><b>{selectedEvent?.source?.container_name || "Not observed"}</b></div>
+      <div className="detail-kv"><span>Container state</span><b>{human(data.nf_health?.[selectedNF]?.container_status || "unknown")}</b></div>
       <div className="detail-kv"><span>Last log received</span><b>{ago(selectedEvent?.time)}</b></div>
       <div className="detail-kv"><span>Observed events</span><b>{data.nf_health?.[selectedNF]?.event_count || data.events.filter((event) => event.nf === selectedNF).length}</b></div>
       <h4>Recent signals</h4>{signals.length ? signals.map((event) => <div className="nf-signal" key={event.id}><span className={event.outcome === "failure" ? "failure" : "success"}/><b>{event.stage}</b><time>{new Date(event.time).toLocaleTimeString("en-GB", {hour12:false})}</time></div>) : <p className="muted">No signals observed for this function.</p>}

@@ -129,5 +129,13 @@ td{color:#263d30;font-weight:500}th{color:#405649;font-weight:750}.detail-kv{col
 
 /* Semantic NF health colors */
 .nf-card.healthy,.nf-card.healthy:hover{border-color:#9fd3b3;background:#e7f7ed}.nf-card.healthy:before{background:#29965d}
-.nf-card.degraded,.nf-card.degraded:hover,.nf-card.no-data,.nf-card.no-data:hover{border-color:#e8aaa5;background:#fdebea}.nf-card.degraded:before,.nf-card.no-data:before{background:#d6534a}
+.nf-card.degraded,.nf-card.degraded:hover,.nf-card.no-data,.nf-card.no-data:hover,.nf-card.unreachable,.nf-card.unreachable:hover{border-color:#e8aaa5;background:#fdebea}.nf-card.degraded:before,.nf-card.no-data:before,.nf-card.unreachable:before{background:#d6534a}
 .nf-card.selected{transform:translateY(-3px);box-shadow:0 16px 32px rgba(20,104,58,.16),inset 0 0 0 3px rgba(24,98,63,.72)}.nf-card.selected:after{display:none}
+
+/* Unambiguous NF status badges */
+.nf-card .nf-card-title i.healthy{border:1px solid #16804b;background:#fff;color:#075d37;box-shadow:0 3px 10px rgba(13,106,61,.14)}
+.nf-card .nf-card-title i.degraded,.nf-card .nf-card-title i.no-data,.nf-card .nf-card-title i.unreachable{border:1px solid #c83f37;background:#fff;color:#a32620;box-shadow:0 3px 10px rgba(184,50,42,.14)}
+.selected-nf-title .pill.healthy{border-color:#16804b;background:#e0f5e8;color:#075d37}.selected-nf-title .pill.degraded,.selected-nf-title .pill.no-data,.selected-nf-title .pill.unreachable{border-color:#cf5149;background:#fde4e1;color:#a32620}
+
+/* Clean white application canvas */
+html,body,#root,.app-frame,.shell,main{background:#fff}.app-frame{background-image:none}main:before{display:none}aside{background:#fff}
