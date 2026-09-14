@@ -269,18 +269,13 @@ function NFHealth({ data }) {
     <div className="nf-grid">{functions.map((nf) => {
       const event = latestByNF[nf];
       const status = event ? (event.outcome === "failure" ? "Degraded" : "Healthy") : "No data";
-      return <button key={nf} className={`nf-card ${selectedNF === nf ? "selected" : ""}`} onClick={() => setSelectedNF(nf)}>
+      return <button key={nf} className={`nf-card ${status.toLowerCase().replace(" ", "-")} ${selectedNF === nf ? "selected" : ""}`} onClick={() => setSelectedNF(nf)}>
         <span className="nf-card-title"><b>{nf.toUpperCase()}</b><i className={status.toLowerCase().replace(" ", "-")}>{status}</i></span>
         <small>Evidence source: {event?.source?.container_name || "Not observed"}</small>
         <small>Last log: {ago(event?.time)}</small>
         <small>Recent outcome: {event ? human(event.outcome) : "Not checked"}</small>
       </button>;
     })}</div>
-    <section className="panel service-map"><div className="panel-header"><h2>Service communication</h2><span>Retained evidence</span></div><div className="service-nodes">
-      <div className="service-path"><span>gNB</span><i>→</i>{["amf","smf","upf"].map((nf, index) => <React.Fragment key={nf}><span className={latestByNF[nf] ? "seen" : "missing"}>{nf.toUpperCase()}</span>{index < 2 && <i>→</i>}</React.Fragment>)}</div>
-      <div className="service-row">{["ausf","udm","nrf","pcf"].map((nf) => <span className={latestByNF[nf] ? "seen" : "missing"} key={nf}>{nf.toUpperCase()}</span>)}</div>
-      {unavailable > 0 && <p>△ Some network functions have no evidence in the current retained window</p>}
-    </div></section>
     <section className="panel selected-nf"><div className="panel-header"><h2>Selected NF</h2></div><div className="selected-nf-body">
       <div className="selected-nf-title"><h3>{selectedNF.toUpperCase()}</h3><Status value={selectedEvent ? selectedEvent.outcome === "failure" ? "degraded" : "healthy" : "unreachable"}/></div>
       <div className="detail-kv"><span>Evidence source</span><b>{selectedEvent?.source?.container_name || "Not observed"}</b></div>
